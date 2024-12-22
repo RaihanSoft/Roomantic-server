@@ -53,7 +53,43 @@ async function run() {
             res.json(result);
         });
 
-       
+        // Route to add a new booking and mark the room as unavailable
+        app.post('/book-room', async (req, res) => {
+            const booking = req.body;
+            try {
+                const result = await bookingsCollection.insertOne(booking);
+                if (result.insertedId) {
+                    await hotelCollection.updateOne(
+                        { _id: new ObjectId(booking.roomId) },
+                        { $set: { availability: false } }
+                    );
+                    res.status(201).json(result);
+                } else {
+                    throw new Error("Failed to book the room.");
+                }
+            } catch (error) {
+                console.error("Error adding booking:", error);
+                res.status(500).json({ message: "Error adding booking." });
+            }
+        });
+
+        // Route to get bookings for a specific user by email
+        app.get('/myBookings', async (req, res) => {
+            const { email } = req.query;
+            if (!email) {
+                return res.status(400).json({ message: "Email query parameter is required." });
+            }
+
+            try {
+                const bookings = await bookingsCollection.find({ userEmail: email }).toArray();
+                res.status(200).json(bookings);
+            } catch (error) {
+                console.error("Error fetching bookings:", error);
+                res.status(500).json({ message: "Error fetching bookings." });
+            }
+        });
+
+      
 
     } catch (error) {
         console.error("Failed to connect to MongoDB:", error);
