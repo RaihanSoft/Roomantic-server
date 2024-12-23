@@ -2,6 +2,8 @@ require('dotenv').config()
 
 const express = require('express');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 const app = express();
@@ -19,16 +21,68 @@ const client = new MongoClient(uri, {
 
 // Middleware
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+    origin: [
+        'http://localhost:5173',
+        'https://mordern-hotel-booking-platform.web.app',
+        'https://mordern-hotel-booking-platform.firebaseapp.com'
+    ],
+    credentials: true,
+}));
+app.use(cookieParser());
+
+const verifyToken = (req, res, next) => {
+
+    const token = req.cookies?.token;
+    if (!token) {
+        return res.status(401).send({ message: 'Access denied' });
+    }
+    //verify token
+    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+        if (err) {
+            return res.status(401).send({ message: 'Invalid token' });
+        }
+        req.user = decoded;
+        next()
+    })
+}
+
 
 async function run() {
     try {
-        await client.connect();
-        console.log("Connected to MongoDB!");
+        // await client.connect();
+        // console.log("Connected to MongoDB!");
 
         // Database and Collection references
         const hotelCollection = client.db("hotel-booking").collection("rooms");
         const bookingsCollection = client.db("hotel-booking").collection("bookings");
+
+
+
+        //JWT auth related api
+        app.post('/jwt', async (req, res) => {
+            const user = req.body;
+            const token = jwt.sign(user, process.env.JWT_SECRET, { expiresIn: '5h' })
+
+            res.cookie('token', token, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict'
+            })
+                .send({ success: true })
+        })
+
+
+        //JWT auth related api
+        app.post('/logout', async (req, res) => {
+
+            res.clearCookie('token', {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict'
+            })
+                .send({ success: true })
+        })
 
         // Route to get all rooms
         app.get('/rooms', async (req, res) => {
@@ -53,43 +107,34 @@ async function run() {
             res.json(result);
         });
 
-        // Route to add a new booking and mark the room as unavailable
-        app.post('/book-room', async (req, res) => {
-            const booking = req.body;
+       
+
+        // Route to get user reviews sorted by timestamp in descending order
+        app.get('/reviews', async (req, res) => {
             try {
-                const result = await bookingsCollection.insertOne(booking);
-                if (result.insertedId) {
-                    await hotelCollection.updateOne(
-                        { _id: new ObjectId(booking.roomId) },
-                        { $set: { availability: false } }
-                    );
-                    res.status(201).json(result);
-                } else {
-                    throw new Error("Failed to book the room.");
-                }
+                const reviews = await hotelCollection.aggregate([
+                    { $unwind: "$reviews" },
+                    { $sort: { "reviews.timestamp": -1 } },
+                    { $limit: 10 },
+                    { $project: { _id: 0, reviews: 1 } }
+                ]).toArray();
+                res.json(reviews.map(review => review.reviews));
             } catch (error) {
-                console.error("Error adding booking:", error);
-                res.status(500).json({ message: "Error adding booking." });
+                res.status(500).send('Error fetching reviews');
             }
         });
 
-        // Route to get bookings for a specific user by email
-        app.get('/myBookings', async (req, res) => {
-            const { email } = req.query;
-            if (!email) {
-                return res.status(400).json({ message: "Email query parameter is required." });
-            }
 
+
+        // Route to get all hotel locations
+        app.get('/hotel-locations', async (req, res) => {
             try {
-                const bookings = await bookingsCollection.find({ userEmail: email }).toArray();
-                res.status(200).json(bookings);
+                const hotelLocations = await hotelCollection.find({}, { projection: { location: 1 } }).toArray();
+                res.json(hotelLocations.map(hotel => hotel.location));
             } catch (error) {
-                console.error("Error fetching bookings:", error);
-                res.status(500).json({ message: "Error fetching bookings." });
+                res.status(500).send('Error fetching hotel locations');
             }
         });
-
-      
 
     } catch (error) {
         console.error("Failed to connect to MongoDB:", error);
@@ -97,6 +142,10 @@ async function run() {
 }
 
 run();
+
+app.get('/', (req, res) => {
+    res.send("Welcome to the Hotel Booking API!");
+})
 
 app.listen(port, () => {
     console.log(`Server running on port ${port}...`);
