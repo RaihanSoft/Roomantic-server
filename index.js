@@ -85,7 +85,7 @@ async function run() {
         })
 
         // Route to get all rooms
-        app.get('/rooms', async (req, res) => {
+        app.get('/rooms',  async (req, res) => {
             const { minPrice, maxPrice } = req.query;
             const query = {};
             if (minPrice) query.price = { $gte: parseFloat(minPrice) };
@@ -108,6 +108,8 @@ async function run() {
             const result = await hotelCollection.findOne(query);
             res.json(result);
         });
+
+
 
         // Route to add a new booking and mark the room as unavailable
         app.post('/book-room',  async (req, res) => {
@@ -192,7 +194,79 @@ async function run() {
         });
 
         // Route to update a booking date by ID
-        
+        app.put('/bookings/:id', async (req, res) => {
+            const { id } = req.params;
+            const { date } = req.body;
+
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).json({ message: "Invalid ID format." });
+            }
+
+            try {
+                const result = await bookingsCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: { date: new Date(date).toISOString() } }
+                );
+                if (result.modifiedCount === 1) {
+                    res.status(200).json({ message: "Booking date updated successfully." });
+                } else {
+                    res.status(404).json({ message: "Booking not found." });
+                }
+            } catch (error) {
+                console.error("Error updating booking date:", error);
+                res.status(500).json({ message: "Error updating booking date." });
+            }
+        });
+
+        // Route to post a review for a room
+        app.post('/rooms/:id/reviews', async (req, res) => {
+            const { id } = req.params;
+            const review = req.body;
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).json({ message: "Invalid ID format." });
+            }
+
+            try {
+                review.timestamp = new Date().toISOString(); // Add timestamp here
+                const result = await hotelCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $push: { reviews: review } }
+                );
+                if (result.modifiedCount === 1) {
+                    res.status(200).json({ message: "Review added successfully." });
+                } else {
+                    res.status(404).json({ message: "Room not found." });
+                }
+            } catch (error) {
+                console.error("Error adding review:", error);
+                res.status(500).json({ message: "Error adding review." });
+            }
+        });
+
+        // Route to get six top-rated rooms for the Featured Rooms section
+        app.get('/featured-rooms', async (req, res) => {
+            try {
+                const rooms = await hotelCollection.find().sort({ rating: -1 }).limit(6).toArray();
+                res.json(rooms);
+            } catch (error) {
+                res.status(500).send('Error fetching featured rooms');
+            }
+        });
+
+        // Route to get user reviews sorted by timestamp in descending order
+        app.get('/reviews', async (req, res) => {
+            try {
+                const reviews = await hotelCollection.aggregate([
+                    { $unwind: "$reviews" },
+                    { $sort: { "reviews.timestamp": -1 } },
+                    { $limit: 10 },
+                    { $project: { _id: 0, reviews: 1 } }
+                ]).toArray();
+                res.json(reviews.map(review => review.reviews));
+            } catch (error) {
+                res.status(500).send('Error fetching reviews');
+            }
+        });
 
 
         
