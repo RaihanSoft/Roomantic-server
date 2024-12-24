@@ -99,6 +99,8 @@ async function run() {
             }
         });
 
+        
+
         // Route to get room details by ID
         app.get('/rooms/:id', async (req, res) => {
             const { id } = req.params;
@@ -108,7 +110,8 @@ async function run() {
         });
 
         // Route to add a new booking and mark the room as unavailable
-        app.post('/book-room', async (req, res) => {
+        app.post('/book-room',  async (req, res) => {
+
             const booking = req.body;
             try {
                 const result = await bookingsCollection.insertOne(booking);
@@ -149,22 +152,50 @@ async function run() {
             }
         });
 
-       
+        // Route to cancel a booking by ID and mark the room as available
+        app.delete('/bookings/:id', async (req, res) => {
+            const { id } = req.params;
 
-        // Route to get user reviews sorted by timestamp in descending order
-        app.get('/reviews', async (req, res) => {
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).json({ message: "Invalid ID format." });
+            }
+
             try {
-                const reviews = await hotelCollection.aggregate([
-                    { $unwind: "$reviews" },
-                    { $sort: { "reviews.timestamp": -1 } },
-                    { $limit: 10 },
-                    { $project: { _id: 0, reviews: 1 } }
-                ]).toArray();
-                res.json(reviews.map(review => review.reviews));
+                const booking = await bookingsCollection.findOne({ _id: new ObjectId(id) });
+                if (!booking) {
+                    return res.status(404).json({ message: "Booking not found." });
+                }
+                //!here
+                const bookingDate = new Date(booking.date);
+                const currentDate = new Date();
+                const oneDayBeforeBooking = new Date(bookingDate);
+                oneDayBeforeBooking.setDate(bookingDate.getDate() - 1);
+
+                if (currentDate > oneDayBeforeBooking) {
+                    return res.status(400).json({ message: "Cannot cancel booking less than 1 day before the booked date." });
+                }
+                //!here
+                const result = await bookingsCollection.deleteOne({ _id: new ObjectId(id) });
+                if (result.deletedCount === 1) {
+                    await hotelCollection.updateOne(
+                        { _id: new ObjectId(booking.roomId) },
+                        { $set: { availability: true } }
+                    );
+                    res.status(200).json({ message: "Booking canceled successfully." });
+                } else {
+                    res.status(404).json({ message: "Booking not found." });
+                }
             } catch (error) {
-                res.status(500).send('Error fetching reviews');
+                console.error("Error canceling booking:", error);
+                res.status(500).json({ message: "Error canceling booking." });
             }
         });
+
+        // Route to update a booking date by ID
+        
+
+
+        
 
 
 
