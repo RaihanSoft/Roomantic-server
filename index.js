@@ -102,7 +102,7 @@ async function run() {
         
 
         // Route to get room details by ID
-        app.get('/rooms/:id', async (req, res) => {
+        app.get('/rooms/:id',  async (req, res) => {
             const { id } = req.params;
             const query = { _id: new ObjectId(id) };
             const result = await hotelCollection.findOne(query);
@@ -155,7 +155,7 @@ async function run() {
         });
 
         // Route to cancel a booking by ID and mark the room as available
-        app.delete('/bookings/:id', async (req, res) => {
+        app.delete('/bookings/:id',  async (req, res) => {
             const { id } = req.params;
 
             if (!ObjectId.isValid(id)) {
